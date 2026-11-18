@@ -1,0 +1,57 @@
+# Checks both halves of console-look on every pull request and on main: the Python module on the
+# Python versions it supports, the Swift package with its format rules and tests.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# The jobs only read the code; GitHub's token gets no right to change anything.
+permissions:
+  contents: read
+
+# A newer push replaces the run of an older one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Actions are pinned to a commit, which nobody can move; Dependabot proposes newer ones.
+jobs:
+  python:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Tests
+        run: python -m unittest discover -s Tests
+        env:
+          PYTHONPATH: src
+      - name: Installs and runs as a command
+        run: |
+          python -m pip install .
+          console-look passed "Installed" "console-look"
+
+  swift:
+    name: Swift
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Format
+        run: swift format lint --strict --recursive Sources Tests Package.swift
+      - name: SwiftLint
+        run: swiftlint lint --quiet --strict  # preinstalled on GitHub's macOS images
+      - name: Tests
+        run: swift test

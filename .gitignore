@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+__pycache__/
+*.egg-info/
+build/
+dist/
+.venv/
+.DS_Store
+.idea/
