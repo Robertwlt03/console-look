@@ -18,7 +18,8 @@
 - No dependency beyond the Python standard library and Foundation.
 - Python and Swift draw the same pieces with the same marks, colors and spacing; a change to one
   half goes into the other in the same commit, or the README says why it does not.
-- Never print outside the module's own `show`, `relay` and `data`.
+- Text goes out through `show`, `relay` and `data`; only cursor codes (spinner, list redraw,
+  hidden cursor) may be printed directly.
 
 ## Where things go
 

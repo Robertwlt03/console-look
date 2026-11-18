@@ -37,13 +37,11 @@ Python 3.13 or newer, on macOS or Linux:
 pip install git+https://github.com/Robertwlt03/console-look@v0.1.0
 ```
 
-Swift 6, in `Package.swift`:
+Swift 6, in `Package.swift`, then add the product `ConsoleLook` to your target:
 
 ```swift
-.package(url: "https://github.com/Robertwlt03/console-look", from: "0.1.0"),
+dependencies: [.package(url: "https://github.com/Robertwlt03/console-look", from: "0.1.0")]
 ```
-
-Then add the product `ConsoleLook` to your target.
 
 ## Use
 

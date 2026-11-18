@@ -52,6 +52,9 @@ jobs:
       - name: Format
         run: swift format lint --strict --recursive Sources Tests Package.swift
       - name: SwiftLint
-        run: swiftlint lint --quiet --strict  # preinstalled on GitHub's macOS images
+        # GitHub's macOS images bring SwiftLint; Homebrew installs it if one does not.
+        run: |
+          command -v swiftlint || brew install swiftlint
+          swiftlint lint --quiet --strict
       - name: Tests
         run: swift test

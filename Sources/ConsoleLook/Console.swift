@@ -88,7 +88,7 @@ public enum Console {
         let title = "\(passed ? passedMark : failedMark) \(outcome)"
         let indented = details.map { detail in "  \(detail)" }
         let lines = [(title, paint(title, color, .bold))] + indented.map { line in (line, line) }
-        let width = (lines.map(\.0.count).max() ?? 0) + framePadding
+        let width = (([title] + indented).map(\.count).max() ?? 0) + framePadding
         let border = String(repeating: "─", count: width)
         let side = paint("│", color)
         let rows = lines.map { plain, shown in

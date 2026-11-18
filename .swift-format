@@ -17,11 +17,6 @@
   "maximumBlankLines": 1,
   "multiElementCollectionTrailingCommas": true,
   "multilineTrailingCommaBehavior": "keptAsWritten",
-  "noAssignmentInExpressions": {
-    "allowedFunctions": [
-      "XCTAssertNoThrow"
-    ]
-  },
   "orderedImports": {
     "includeConditionalImports": false,
     "shouldGroupImports": true

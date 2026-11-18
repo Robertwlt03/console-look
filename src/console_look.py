@@ -50,9 +50,12 @@ NOTE_INDENT = "   "  # hints start below the text of a result line
 TABLE_WIDTH = 16  # the names of a table fill this many characters, so the texts line up
 ENTRY_INDENT = "       "
 ENTRY_LABEL_WIDTH = 5  # wide enough for a line number such as 12345
-HEADED = "CONSOLE_HEADED"  # set once a heading shows; what the command starts leaves out its own
-STEP = "CONSOLE_STEP"  # set for a command that runs as a step of another; it draws no frame
+# Names of environment variables: set once a heading shows, so what the command starts leaves out
+# its own; and set for a command that runs as a step of another, so it draws no frame.
+HEADED_VARIABLE, STEP_VARIABLE = "CONSOLE_HEADED", "CONSOLE_STEP"
 CLEAR_LINE = "\r\x1b[K"  # back to the start of the line and erase it
+NOT_STARTED = 127  # the status a shell gives a command it cannot start
+UNKNOWN_PIECE = 2  # the status of the command line when it does not know what to draw
 COLOR_CODE = re.compile(r"\x1b\[[0-9;]*m")
 
 # Questions: a mark in front, the line the answer is typed on, the entries of a list, and the keys
@@ -77,6 +80,8 @@ def paint(text: str, *styles: str) -> str:
     return f"\x1b[{';'.join(styles)}m{text}\x1b[0m"
 
 
+# ponytail: counts code points, so wide characters (CJK, emoji) push a frame's border out; count
+# East Asian width W/F as two (unicodedata) in both halves once such texts show up.
 def visible_length(text: str) -> int:
     return len(COLOR_CODE.sub("", text))
 
@@ -91,9 +96,9 @@ def show(text: str) -> None:
 
 def heading(title: str, detail: str = "") -> None:
     """Opens a command; once only, so a script another command started adds no second one."""
-    if os.environ.get(HEADED):
+    if os.environ.get(HEADED_VARIABLE):
         return
-    os.environ[HEADED] = "1"
+    os.environ[HEADED_VARIABLE] = "1"
     show(f"\n{paint(title, BOLD)}" + (f"  {paint(detail, DIM)}" if detail else "") + "\n")
 
 
@@ -115,7 +120,7 @@ class Spinner(threading.Thread):
             frame += 1
 
 
-turning: list[Spinner] = []  # the wheel that turns right now, if any
+spinners: list[Spinner] = []  # the one wheel turning right now, if any; a list needs no global
 
 
 def running(text: str) -> None:
@@ -123,13 +128,13 @@ def running(text: str) -> None:
     terminal: a log on GitHub gets the result lines alone."""
     stop_running()
     if IN_TERMINAL:
-        turning.append(Spinner(text))
-        turning[-1].start()
+        spinners.append(Spinner(text))
+        spinners[-1].start()
 
 
 def stop_running() -> None:
-    while turning:
-        spinner = turning.pop()
+    while spinners:
+        spinner = spinners.pop()
         spinner.stopped.set()
         spinner.join()
 
@@ -149,16 +154,23 @@ def step(text: str, detail: str = "") -> None:
 def wait(text: str, command: list[str], folder: str | os.PathLike | None = None) -> int:
     """Runs a command (in a folder, if given) with the wheel turning in front of the text, then
     shows what it printed and returns its status. In a log, on GitHub for instance, a step line
-    and the output as it comes."""
-    if not IN_TERMINAL:
-        step(text)
-        sys.stdout.flush()  # the step line before what the command prints itself
-        return subprocess.run(command, cwd=folder).returncode
-    running(text)
-    result = subprocess.run(
-        command, cwd=folder, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-        errors="replace",  # a byte outside UTF-8 shows as a placeholder instead of stopping
-    )
+    and the output as it comes. A command that cannot start gets a failed line and the status a
+    shell gives it."""
+    if not command:
+        raise ValueError("wait needs a command to run")
+    try:
+        if not IN_TERMINAL:
+            step(text)
+            sys.stdout.flush()  # the step line before what the command prints itself
+            return subprocess.run(command, cwd=folder).returncode
+        running(text)
+        result = subprocess.run(
+            command, cwd=folder, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            errors="replace",  # a byte outside UTF-8 shows as a placeholder instead of stopping
+        )
+    except OSError as error:  # missing, not executable, or the folder is gone
+        failed(text, f"{command[0]}: {error.strerror or error}")
+        return NOT_STARTED
     relay(result.stdout)
     return result.returncode
 
@@ -205,8 +217,9 @@ def table(rows: list[tuple[str, str]]) -> None:
 
 def frame(outcome: str, details: list[str], color: str) -> None:
     """Ends a command, the same shape everywhere: the outcome after its mark, then below it what
-    it concerns, such as the file or folder it made. As a step of another command, one line."""
-    if os.environ.get(STEP):
+    it concerns, such as the file or folder it made. As a step of another command, one line.
+    color is SUCCESS or FAILURE; anything else draws a failed frame in that color."""
+    if os.environ.get(STEP_VARIABLE):
         (passed if color == SUCCESS else failed)(outcome, " · ".join(details))
         return
     mark = PASSED_MARK if color == SUCCESS else FAILED_MARK
@@ -263,13 +276,18 @@ def ask_until(question: str, hint: str, problem: Callable[[str], str], current: 
 
 def ask_choice(question: str, options: list[str]) -> int:
     """A list to walk with the arrow keys; Enter picks the marked entry and returns its index."""
+    if not options:
+        raise ValueError("ask_choice needs at least one option")
     ask(question, "↑↓ Enter")
     marked = 0
     show_options(options, marked)
     with keys_one_by_one() as read_key:
         while (key := read_key()) not in ENTER_KEYS:
             marked = (marked + MOVES.get(key, 0)) % len(options)
-            print(f"\x1b[{len(options)}F", end="")  # up to the first entry, to draw the list again
+            # Up to the first entry, to draw the list again.
+            # ponytail: one line per entry; an entry wider than the terminal wraps and the list
+            # shifts on redraw. Cut entries to shutil.get_terminal_size() once that happens.
+            print(f"\x1b[{len(options)}F", end="")
             show_options(options, marked)
     show("")
     return marked
@@ -323,8 +341,8 @@ def main(arguments: list[str] | None = None) -> int:
     match arguments:
         case [piece, *texts] if piece in pieces and 1 <= len(texts) <= pieces[piece][1]:
             pieces[piece][0](*texts)
-        case ["stopped", text, detail, *hints]:  # the detail may be "" when only hints follow
-            stopped(text, detail, tuple(hints))
+        case ["stopped", text, *rest]:  # a detail, maybe "", then the hints
+            stopped(text, *rest[:1], hints=tuple(rest[1:]))
         case ["table"]:  # reads "name<tab>text" lines
             table([line.rstrip("\n").partition("\t")[::2] for line in sys.stdin])
         case ["frame", kind, outcome, *details] if kind in FRAME_COLORS:
@@ -334,7 +352,7 @@ def main(arguments: list[str] | None = None) -> int:
         case _:
             pieces_text = "heading, passed, failed, step, note, stopped, table, frame, wait"
             stopped("Unknown piece", " ".join(arguments), (pieces_text,))
-            return 2
+            return UNKNOWN_PIECE
     return 0
 
 
